@@ -685,6 +685,10 @@ class Stub(object):
 
 
 def main(argv=sys.argv):
+    from .arch import PowerPC64
+    from .target import Null
+    from .target.microwatt import Microwatt
+
     targets = {
         "null-ppc64le": lambda *params: Null(PowerPC64(*params)),
         "microwatt": lambda *params: Microwatt(*params),
