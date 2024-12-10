@@ -1,5 +1,5 @@
 import logging
-from typing import TextIO
+from typing import TextIO, List
 
 from ..arch import Arch
 
@@ -184,4 +184,64 @@ class Null(Target):
         pass
 
     def reset(self):
+        pass
+
+
+class Dummy(Null):
+    """A dummy target that can accept any memories and registers written to it."""
+
+    class RawMemory:
+        def __init__(self, address: int, data: bytearray):
+            self.address = address
+            self.data = data
+
+        def __str__(self):
+            return f"({self.address:#x}~{self.address + len(self.data):#x})"
+
+        def __repr__(self):
+            return self.__str__()
+
+        def __len__(self):
+            return len(self.data)
+
+    def __init__(self, cpu_state):
+        super().__init__(cpu_state)
+        self.memories: List[self.RawMemory] = []  # List of memory regions
+
+    def memory_read(self, address: int, length: int) -> bytes:
+        for mem in self.memories:
+            if mem.address <= address < mem.address + len(mem):
+                offset = address - mem.address
+                # Limit the length to available data
+                length = min(length, len(mem) - offset)
+                return mem.data[offset : offset + length]
+        return b""
+
+    def memory_write(self, address, data, length=None):
+        data = data[:length] if length else data
+
+        mem = self.RawMemory(address, bytearray(data))
+        self._logger.debug(f"Write: {mem.address:#x} - {mem.address + len(mem):#x}")
+
+        for i, m in enumerate(self.memories):
+            if m.address + len(m.data) <= address:
+                continue
+
+            if address + len(data) <= m.address:
+                # No overlap
+                self.memories.insert(i, mem)
+                return
+            else:
+                # Overlap
+                offset = address - m.address
+                m.data[offset : offset + len(data)] = data
+                return
+
+        # New memory region
+        self.memories.append(mem)
+
+    def register_read(self, regnum: int) -> bytes:
+        return self._cpustate.registers[regnum].get_bytes()
+
+    def register_write(self, regnum, data):
         pass

@@ -539,7 +539,7 @@ class Stub(object):
 
             offset = reg.offset + reg.size
             if not reg.has_value:
-                reply += "XX" * reg.size
+                reply += "xx" * reg.size
             else:
                 reply += bytes2hex(bytes(reg))
         self._rsp.send(reply)
