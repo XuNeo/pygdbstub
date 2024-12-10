@@ -534,7 +534,7 @@ class Stub(object):
         reply = ""
         for reg in self._target.registers:
             if not reg.has_value:
-                reply += "XX" * reg.size
+                reply += "xx" * reg.size
             else:
                 reply += bytes2hex(bytes(reg))
         self._rsp.send(reply)
