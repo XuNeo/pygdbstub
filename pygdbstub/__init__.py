@@ -531,7 +531,12 @@ class Stub(object):
             * `XX…` Each byte of register data is described by two hex digits.
             * `E NN` for an error.
         """
-        reply = bytes2hex(*[bytes(reg) for reg in self._target.registers])
+        reply = ""
+        for reg in self._target.registers:
+            if not reg.has_value:
+                reply += "XX" * (reg.size // 8)
+            else:
+                reply += bytes2hex(bytes(reg))
         self._rsp.send(reply)
 
     def handle_P(self, packet):
