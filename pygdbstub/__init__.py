@@ -110,31 +110,17 @@ class IOPipe:
             return data
 
 
-Bytes2HexMap = ["%02x" % x for x in range(256)]
-
-
 def bytes2hex(*data: bytes) -> str:
-    hex = io.StringIO()
-    for datum in data:
-        for b in datum:
-            hex.write(Bytes2HexMap[b])
-    return hex.getvalue()
+    return "".join([datum.hex() for datum in data])
 
 
 def string2hex(*data: str) -> str:
     return bytes2hex(*[bytes(datum, "ascii") for datum in data])
 
 
-Hex2BytesMap = {("%02x" % x): x for x in range(256)}
-
-
 def hex2bytes(hex: str) -> bytearray:
     assert len(hex) % 2 == 0
-    data = bytearray(len(hex) // 2)
-    for i in range(len(data)):
-        b = Hex2BytesMap[hex[2 * i : 2 * i + 2]]
-        data[i] = b
-    return data
+    return bytearray.fromhex(hex)
 
 
 def hex2string(hex: str) -> str:
@@ -297,6 +283,7 @@ class Stub(object):
     def __init__(self, target: Target, channel: IOPipe = IOPipe()):
         self._target = target
         self._rsp = RSP(channel)
+        self.exiting = False
 
     #
     # __enter__ and __exit__ allow to use `with` statement.
@@ -319,7 +306,7 @@ class Stub(object):
         with self:
             self._target.flush()
             self._target.stop()
-            while True:
+            while not self.exiting:
                 try:
                     if not self.process1(self._poll_interval):
                         return
@@ -350,6 +337,8 @@ class Stub(object):
                 return True
         try:
             handler(packet)
+        except SystemExit:
+            self.exiting = True
         except Exception as e:
             # Error when processing the packet
             self._rsp.send("EF1")
@@ -445,7 +434,7 @@ class Stub(object):
                 if handled is None:
                     self._rsp.send_unsupported()
                 elif handled is True:
-                    if response.getvalue() is None:
+                    if not response.getvalue():
                         self._rsp.send("OK")
                     else:
                         self._rsp.send(string2hex(*[response.getvalue()]))
@@ -703,6 +692,7 @@ class SocketIOStub(Stub):
         # Reuse address so we don't have to wait for socket to be
         # close before we can bind to the port again
         listener.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         # Wait for client to connect...
         try:
