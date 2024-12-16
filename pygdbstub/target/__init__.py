@@ -35,7 +35,7 @@ class Target(object):
     def step(self):
         raise Exception("Should be implemented!")
 
-    def cont(self):
+    def cont(self, callback=None):
         raise Exception("Should be implemented!")
 
     def reset(self):
@@ -64,6 +64,15 @@ class Target(object):
 
         If `True` is returned, target MUST hasattr(target, 'SWBREAK_INSN') and
         it must be of type `bytes`.
+        """
+        return False
+
+    def has_hwbreak(self) -> bool:
+        """
+        Return `True` if target support hardware breakpoints, `False` otherwise.
+
+        If `True` is returned, target MUST hasattr(target, 'insert_break') and
+        'remove_break'.
         """
         return False
 

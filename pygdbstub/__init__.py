@@ -669,23 +669,28 @@ class Stub(object):
         packet pair. To avoid potential problems with duplicate packets, the
         operations should be implemented in an idempotent way.
         """
-        if not self._target.has_swbreak():
-            self._rsp.send_unsupported()
-            return
 
+        insert = packet[0] == "Z"
         type, addr, kind = packet[1:].split(",")
         addr = int(addr, 16)
         kind = int(kind, 16)
-        if packet[0] == "Z":
-            if type == "0":
-                self._target.set_swbreak(addr, kind)
-                self._rsp.send("OK")
-        elif packet[0] == "z":
-            if type == "0":
-                self._target.del_swbreak(addr, kind)
-                self._rsp.send("OK")
-        else:
-            self._rsp.send_unsupported()
+
+        result = False
+        if self._target.has_hwbreak():
+            if insert:
+                result = self._target.insert_break(addr, kind)
+            else:
+                result = self._target.remove_break(addr, kind)
+        elif self._target.has_swbreak():
+            if insert:
+                if type == "0":
+                    self._target.set_swbreak(addr, kind)
+                    result = True
+            elif packet[0] == "z":
+                if type == "0":
+                    self._target.del_swbreak(addr, kind)
+                    result = True
+        self._rsp.send("OK" if result else "")
 
 
 class SocketIOStub(Stub):
