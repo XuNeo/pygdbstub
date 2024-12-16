@@ -532,7 +532,12 @@ class Stub(object):
             * `E NN` for an error.
         """
         reply = ""
+        offset = 0
         for reg in self._target.registers:
+            if reg.offset and reg.offset != offset:
+                reply += "xx" * (reg.offset - offset)
+
+            offset = reg.offset + reg.size
             if not reg.has_value:
                 reply += "XX" * (reg.size // 8)
             else:
