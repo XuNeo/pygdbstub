@@ -533,6 +533,15 @@ class Stub(object):
                 reply += bytes2hex(bytes(reg))
         self._rsp.send(reply)
 
+    def handle_p(self, packet):
+        """
+        Read the value of register n; n is in hex. The returned value is two hex digits for each byte in the register (target byte order).
+        """
+        regnum = int(packet[1:], 16)
+        reg = self._target.register_read(regnum)
+        self._rsp.send(bytes2hex(reg))
+
+
     def handle_P(self, packet):
         """
         Write register n… with value r…. The register number n is in hexadecimal, and r… contains two hex digits for each byte in the register (target byte order).
