@@ -150,7 +150,8 @@ class RSP(object):
         assert ack_or_not == "+" or ack_or_not == "-"
         return ack_or_not == "+"
 
-    def send(self, data: str) -> None:
+
+    def send_noack(self, data: str) -> None:
         self._io.write("$")
         csum = 0
         for c in data:
@@ -176,6 +177,26 @@ class RSP(object):
         self._io.write("%02x" % csum)
         self._io.flush()
         self._logger.debug("send: " + data)
+
+    def send_bytes(self, data: bytes) -> None:
+        self._io.write("$")
+        csum = 0
+        for c in data:
+            assert c < 256
+            if c in (ord("$"), ord("#"), ord("*"), ord("}")):
+                csum += ord("}")
+                self._io.write("}")
+                c ^= 0x20
+            csum += c
+            self._io.write(chr(c))
+        csum = csum & 0xFF
+        self._io.write("#")
+        self._io.write("%02x" % csum)
+        self._io.flush()
+        self._logger.debug("send: " + data.hex())
+
+    def send(self, data: str) -> None:
+        self.send_noack(data)
         assert self.recv_ack()
 
     def send_unsupported(self):
@@ -312,6 +333,9 @@ class Stub(object):
                         return
                 except TimeoutError:
                     self.check_target()
+                except Exception as e:
+                    _logger.error(f"Error in stub thread: {e} {traceback.format_exc()}")
+            _logger.info("Stub thread exiting")
 
     def process1(self, timeout: float | None = None) -> bool:
         """
@@ -741,6 +765,8 @@ class SocketIOStub(Stub):
     def start(self):
         try:
             super().start()
+        except Exception as e:
+            _logger.error(f"Error in stub thread: {e}")
         finally:
             self.client_io.close()
         _logger.info("Stub thread stopped")
