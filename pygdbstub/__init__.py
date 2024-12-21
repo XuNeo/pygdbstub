@@ -24,14 +24,16 @@ class IOPipe:
         _in=sys.stdin,
         _out=sys.stdout,
     ):
-        if isinstance(_in, io.BufferedReader):
-            self._in = io.TextIOWrapper(_in, "ascii")
-        elif isinstance(_in, io.RawIOBase):
-            self._in = io.TextIOWrapper(io.BufferedReader(_in, 256), "ascii")
+        # Force input to be a BufferedReader for bytes
+        if not isinstance(_in, io.BufferedIOBase):
+            self._in = io.BufferedReader(_in, 256)
         else:
             self._in = _in
-        if isinstance(_out, io.RawIOBase):
-            self._out = io.TextIOWrapper(_out, "ascii")
+
+        # Force output to be a BufferedWriter for bytes
+        if not isinstance(_out, io.BufferedIOBase):
+            # self._out = io.BufferedWriter(_out)
+            self._out = _out
         else:
             self._out = _out
 
@@ -51,7 +53,7 @@ class IOPipe:
         except OSError:
             self._selector = None
 
-    def write(self, buffer: str):
+    def write(self, buffer: bytes):
         self._out.write(buffer)
 
     def flush(self):
@@ -70,10 +72,10 @@ class IOPipe:
         If timeout is given (not None), raise `TimeoutError`
         if no data are available before timeout expires.
         """
-        if hasattr(self._in.buffer, "peek"):
-            if len(self._in.buffer.peek(1)) != 0:
-                self._logger.debug("readwait() done, data in buffer")
-                return
+        # if hasattr(self._in.buffer, "peek"):
+        #     if len(self._in.buffer.peek(1)) != 0:
+        #         self._logger.debug("readwait() done, data in buffer")
+        #         return
 
         if self._selector is not None:
             while True:
@@ -140,23 +142,23 @@ class RSP(object):
 
     def send_ack(self, request_retransmit=False) -> None:
         if request_retransmit:
-            self._io.write("-")
+            self._io.write(b"-")
         else:
-            self._io.write("+")
+            self._io.write(b"+")
         self._io.flush()
 
     def recv_ack(self) -> bool:
         ack_or_not = self._io.read(1)
-        assert ack_or_not == "+" or ack_or_not == "-"
-        return ack_or_not == "+"
+        assert ack_or_not in [b"+", "-"]
+        return ack_or_not == b"+"
 
 
-    def send_noack(self, data: str) -> None:
-        self._io.write("$")
+    def send_noack(self, data: bytes) -> None:
+        self._io.write(b"$")
         csum = 0
         for c in data:
-            assert ord(c) < 256
-            if c in ("$", "#", "*", "}"):
+            # assert ord(c) < 256
+            if c in b"$#*}":
                 # Handle escaping.
                 #
                 #    The binary data representation uses 7d (ASCII ‘}’) as an escape character. Any escaped byte is
@@ -167,35 +169,20 @@ class RSP(object):
                 #    sequence (described next).
                 #
                 # See https://sourceware.org/gdb/current/onlinedocs/gdb/Overview.html#Binary-Data
-                csum += ord("}")
-                self._io.write("}")
-                c = chr(ord(c) ^ 0x20)
-            csum += ord(c)
-            self._io.write(c)
-        csum = csum & 0xFF
-        self._io.write("#")
-        self._io.write("%02x" % csum)
-        self._io.flush()
-        self._logger.debug("send: " + data)
-
-    def send_bytes(self, data: bytes) -> None:
-        self._io.write("$")
-        csum = 0
-        for c in data:
-            assert c < 256
-            if c in (ord("$"), ord("#"), ord("*"), ord("}")):
-                csum += ord("}")
-                self._io.write("}")
+                self._io.write(b"}")
                 c ^= 0x20
+                csum += ord(b"}")
             csum += c
-            self._io.write(chr(c))
-        csum = csum & 0xFF
-        self._io.write("#")
-        self._io.write("%02x" % csum)
+            self._io.write(bytes([c]))
+        csum &= 0xFF
+        self._io.write(b"#")
+        self._io.write(b"%02x" % csum)
         self._io.flush()
-        self._logger.debug("send: " + data.hex())
+        self._logger.debug(b"send: " + data)
 
-    def send(self, data: str) -> None:
+    def send(self, data: bytes) -> None:
+        if isinstance(data, str):
+            data = bytes(data, "ascii")
         self.send_noack(data)
         assert self.recv_ack()
 
@@ -210,14 +197,14 @@ class RSP(object):
         # See https://sourceware.org/gdb/current/onlinedocs/gdb/Overview.html#Overview
         self.send("")
 
-    def recv(self, timeout: float | None = None) -> str | None:
+    def recv(self, timeout: float | None = None) -> bytes | None:
         while True:
             c = self._io.read(1, timeout)
             if c is None:
                 # Client closed the connection
                 return None
 
-            if c == "\x03":
+            if c == b"\x03":
                 # Handle Ctrl-C
                 #
                 #    ‘Ctrl-C’, on the other hand, is defined and implemented
@@ -232,10 +219,10 @@ class RSP(object):
                 # See https://sourceware.org/gdb/current/onlinedocs/gdb/Interrupts.html#interrupting-remote-targets
                 self._logger.debug("recv Ctrl-C")
                 return c
-            elif c == "$":
+            elif c == b"$":
                 break
 
-        buffer = io.StringIO()
+        buffer = bytearray()
         buffer_csum = 0
 
         while True:
@@ -243,7 +230,7 @@ class RSP(object):
             if c is None:
                 # Client closed the connection
                 return None
-            if c == "}":
+            if c == b"}":
                 # Handle escaping.
                 #
                 #    The binary data representation uses 7d (ASCII ‘}’) as an escape character. Any escaped byte is
@@ -262,21 +249,21 @@ class RSP(object):
                     # Update checksum
                     buffer_csum += ord(c)
                 buffer_csum += ord("}") + ord(c)
-                buffer.write(chr(ord(c) ^ 0x20))
-            elif c == "#":
+                buffer.append(ord(c) ^ 0x20)
+            elif c == b"#":
                 break
             else:
                 buffer_csum += ord(c)
-                buffer.write(c)
+                buffer.append(ord(c))
         buffer_csum = buffer_csum & 0xFF
 
-        csum = int("0x" + self._io.read(2), 16)
+        csum = int(self._io.read(2).decode(), 16)
         assert (
             csum == buffer_csum
         ), f"Checksums do not match (sent: {hex(csum)}, recv'd: {hex(buffer_csum)})"
         self.send_ack()
-        self._logger.debug("recv: " + buffer.getvalue())
-        return buffer.getvalue()
+        self._logger.debug("recv: " + buffer.decode())
+        return bytes(buffer)
 
 
 class TARGET_SIGNAL(enum.IntEnum):
@@ -346,7 +333,7 @@ class Stub(object):
         packet = self._rsp.recv(timeout)
         if packet is None:
             return False
-        packet_type = packet[0]
+        packet_type = chr(packet[0])
         # Sigh, some packet types are not letters so
         # handle them specially
         if packet_type == "?":
@@ -397,9 +384,9 @@ class Stub(object):
         pass
 
     def handle_q(self, packet):
-        if packet.startswith("qSupported"):
+        if packet.startswith(b"qSupported"):
             self._rsp.send("PacketSize=FFFF")
-        elif packet.startswith("qTStatus"):
+        elif packet.startswith(b"qTStatus"):
             """
             ‘qTStatus’
 
@@ -409,7 +396,7 @@ class Stub(object):
             """
             # We do not support tracing, just reply an empty packet
             self._rsp.send_unsupported()
-        elif packet.startswith("qC"):
+        elif packet.startswith(b"qC"):
             """
             `qC`
 
@@ -420,7 +407,7 @@ class Stub(object):
                 `(anything else)`: Any other reply implies the old thread ID.
             """
             self._rsp.send("")
-        elif packet.startswith("qAttached"):
+        elif packet.startswith(b"qAttached"):
             """
             `qAttached:pid`
 
@@ -436,7 +423,7 @@ class Stub(object):
             """
             # We are always attached, so reply "1"
             self._rsp.send("1")
-        elif packet.startswith("qRcmd"):
+        elif packet.startswith(b"qRcmd"):
             """
             `qRcmd,command`
             command (hex encoded) is passed to the local interpreter for execution.
@@ -451,10 +438,10 @@ class Stub(object):
                 * `E NN` Indicate a badly formed request. The error number NN is given as hex digits.
                 * An empty reply indicates that `qRcmd` is not recognized.
             """
-            _, command = packet.split(",")
+            _, command = packet.split(b",")
             try:
                 response = io.StringIO()
-                handled = self._target.monitor(hex2string(command), response)
+                handled = self._target.monitor(hex2string(command.decode("ascii")), response)
                 if handled is None:
                     self._rsp.send_unsupported()
                 elif handled is True:
@@ -473,9 +460,9 @@ class Stub(object):
             self._rsp.send_unsupported()
 
     def handle_v(self, packet):
-        if packet.startswith("vMustReplyEmpty"):
+        if packet.startswith(b"vMustReplyEmpty"):
             self._rsp.send("")
-        elif packet.startswith("vCont?"):
+        elif packet.startswith(b"vCont?"):
             """
             `vCont?`p
             Request a list of actions supported by the `vCont` packet.
@@ -486,7 +473,7 @@ class Stub(object):
             """
             # We do not support vCont
             self._rsp.send_unsupported()
-        elif packet.startswith("vCtrlC"):
+        elif packet.startswith(b"vCtrlC"):
             """
             `vCtrlC`
             Interrupt remote target as if a control-C was pressed on the remote terminal. This is the equivalent
@@ -555,12 +542,13 @@ class Stub(object):
                 reply += "xx" * reg.size
             else:
                 reply += bytes2hex(bytes(reg))
-        self._rsp.send(reply)
+        self._rsp.send(reply.encode("ascii"))
 
     def handle_p(self, packet):
         """
         Read the value of register n; n is in hex. The returned value is two hex digits for each byte in the register (target byte order).
         """
+        packet = packet.decode("ascii")
         regnum = int(packet[1:], 16)
         reg = self._target.register_read(regnum)
         self._rsp.send(bytes2hex(reg))
@@ -572,6 +560,7 @@ class Stub(object):
         E.g.
         Pf=34120000
         """
+        packet = packet.decode("ascii")
         regnum, value = packet[1:].split("=")
         regnum = int(regnum, 16)
         value = hex2bytes(value)
@@ -597,6 +586,7 @@ class Stub(object):
               region of memory.
             * `E NN` NN is errno
         """
+        packet = packet.decode("ascii")
         addr, length = packet[1:].split(",")
         reply = self._target.memory_read(int(addr, 16), int(length, 16))
         reply = bytes2hex(reply)
@@ -613,6 +603,7 @@ class Stub(object):
             * `OK` for success
             * `E NN` for an error (this includes the case where only part of the data was written).
         """
+        packet = packet.decode("ascii")
         addr, length_and_data = packet[1:].split(",")
         length, data = length_and_data.split(":")
         self._target.memory_write(int(addr, 16), hex2bytes(data), int(length, 16))
@@ -703,6 +694,7 @@ class Stub(object):
         operations should be implemented in an idempotent way.
         """
 
+        packet = packet.decode("ascii")
         insert = packet[0] == "Z"
         type, addr, kind = packet[1:].split(",")
         addr = int(addr, 16)
