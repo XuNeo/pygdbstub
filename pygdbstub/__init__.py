@@ -10,6 +10,8 @@ from socket import SocketIO
 
 from .target import Target
 
+__version__ = "0.0.1.2"
+
 logging.basicConfig()
 _logger = logging.getLogger(__name__)
 
