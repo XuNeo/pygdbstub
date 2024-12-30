@@ -1,0 +1,52 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install pytest
+      - name: Run tests
+        run: |
+          . venv/bin/activate
+          pytest
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install flake8 black isort
+      - name: Run Black
+        run: |
+          . venv/bin/activate
+          python -m black --check .
+      - name: Run Flake8
+        run: |
+          . venv/bin/activate
+          python -m flake8 .
+      - name: Run Isort
+        run: |
+          . venv/bin/activate
+          python -m isort --check-only .
