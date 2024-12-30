@@ -23,7 +23,7 @@ class Target(object):
     def register_read(self, regnum: int) -> bytes:
         raise Exception("Should be implemented!")
 
-    def memory_write(self, address: int, data: bytes, length: int = None) -> None:
+    def memory_write(self, address: int, data: bytes, length: int = 0) -> None:
         raise Exception("Should be implemented!")
 
     def register_write(self, regnum: int, data: bytes) -> None:
@@ -171,7 +171,7 @@ class Null(Target):
     def register_write(self, regnum, data):
         pass
 
-    def memory_write(self, address: int, data: bytes, length: int = None) -> None:
+    def memory_write(self, address: int, data: bytes, length: int = 0) -> None:
         pass
 
     def stop(self):

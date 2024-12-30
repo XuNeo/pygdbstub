@@ -3,7 +3,7 @@ import struct
 from typing import TextIO
 
 from ..arch import PowerPC64
-from ..boards import Board, Arty
+from ..boards import Arty, Board
 from . import Target
 
 
@@ -221,7 +221,7 @@ class Microwatt(Target):
         def creset(self):
             self.dmi_write(DBG_CORE.CTRL, DBG_CORE.CTRL_RESET)
 
-    def __init__(self, board : Board|None = None):
+    def __init__(self, board: Board | None = None):
         """
         Initialize Microwatt on given board. If board is not specified,
         defaults to Arty.
